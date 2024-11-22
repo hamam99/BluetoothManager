@@ -5,114 +5,176 @@
  * @format
  */
 
-import React from 'react';
+import React, {useEffect} from 'react';
 import type {PropsWithChildren} from 'react';
 import {
+  Button,
+  FlatList,
+  PermissionsAndroid,
   SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   useColorScheme,
   View,
 } from 'react-native';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
-
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
-
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+import RNBluetoothClassic, {
+  BluetoothDevice,
+} from 'react-native-bluetooth-classic';
 
 function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  const [unpairedDevices, setUnpairedDevices] = React.useState<
+    BluetoothDevice[]
+  >([]);
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const [pairedDevices, setPairedDevices] = React.useState<BluetoothDevice[]>(
+    [],
+  );
+
+  const [connectedDevices, setConnectedDevices] =
+    React.useState<BluetoothDevice[]>();
+
+  const onScanUnpaired = () => {
+    RNBluetoothClassic.startDiscovery()
+      .then(devices => {
+        console.log(devices);
+        setUnpairedDevices(devices);
+      })
+      .catch(error => {
+        console.log('onScanUnpaired err', {error});
+      });
   };
 
+  const onScanPaired = async () => {
+    try {
+      const connected = await RNBluetoothClassic.getBondedDevices();
+      setPairedDevices(connected);
+    } catch (err) {
+      console.log('onScanPaired err', {err});
+      // Error if Bluetooth is not enabled
+      // Or there are any issues requesting paired devices
+    }
+  };
+
+  const requestAccessFineLocationPermission = async () => {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Access fine location required for discovery',
+        message:
+          'In order to perform discovery, you must enable/allow ' +
+          'fine location access.',
+        buttonNeutral: 'Ask Me Later',
+        buttonNegative: 'Cancel',
+        buttonPositive: 'OK',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
+  const getConnectedDevice = async () => {
+    try {
+      const connected = await RNBluetoothClassic.getConnectedDevices();
+      setConnectedDevices(connected);
+      console.log('getConnectedDevice', connected);
+    } catch (err) {
+      console.log('getConnectedDevice err', {err});
+      // Error if Bluetooth is not enabled
+      // Or there are any issues requesting paired devices
+    }
+  };
+
+  useEffect(() => {
+    requestAccessFineLocationPermission();
+  }, []);
+
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <SafeAreaView style={{}}>
+      <Button title="Scan Connected Device" onPress={getConnectedDevice} />
+      <FlatList
+        data={connectedDevices}
+        renderItem={({item}) => {
+          return (
+            <TouchableOpacity
+              onPress={() => {
+                RNBluetoothClassic.disconnectFromDevice(item?.address)
+                  .then(device => {
+                    console.log('device', device);
+                    getConnectedDevice();
+                  })
+                  .catch(error => {
+                    console.error(error);
+                  });
+              }}
+              style={{
+                height: 36,
+                width: '100%',
+                justifyContent: 'center',
+              }}>
+              <Text>{item.name}</Text>
+            </TouchableOpacity>
+          );
+        }}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
+
+      <Button title="Scan Unpaired Device" onPress={onScanUnpaired} />
+      <FlatList
+        data={unpairedDevices}
+        renderItem={({item}) => {
+          return (
+            <TouchableOpacity
+              onPress={() => {
+                RNBluetoothClassic.pairDevice(item?.address)
+                  .then(device => {
+                    console.log('device', device);
+                    onScanPaired();
+                    onScanUnpaired();
+                  })
+                  .catch(error => {
+                    console.error(error);
+                  });
+              }}
+              style={{
+                height: 36,
+                width: '100%',
+                justifyContent: 'center',
+              }}>
+              <Text>{item.name}</Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
+      <Button title="Paired Device" onPress={onScanPaired} />
+      <FlatList
+        data={pairedDevices}
+        renderItem={({item}) => {
+          return (
+            <TouchableOpacity
+              onPress={() => {
+                RNBluetoothClassic.connectToDevice(item?.address)
+                  .then(device => {
+                    console.log('device', device);
+                    // setConnectedDevices(device);
+                  })
+                  .catch(error => {
+                    console.error(error);
+                  });
+              }}
+              style={{
+                height: 36,
+                width: '100%',
+                justifyContent: 'center',
+              }}>
+              <Text>{item.name}</Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
 
 export default App;
